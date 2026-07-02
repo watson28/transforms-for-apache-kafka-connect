@@ -256,6 +256,37 @@ transforms.copyKey.type=io.aiven.kafka.connect.transforms.KeyToValue
 transforms.copyKey.key.fields=*
 ```
 
+## Predicates
+
+Kafka Connect allows a transformation to be applied conditionally by attaching a [predicate](https://kafka.apache.org/43/kafka-connect/user-guide/#predicates). This collection provides the following predicates.
+
+### `FieldValueMatches`
+
+This predicate is satisfied when a field in the record value equals an expected value or matches a regular expression. The field is addressed using Kafka Connect's [field path syntax](https://kafka.apache.org/documentation/#connect_transforms) (see `field.syntax.version`). Both schema-based (Avro) and schemaless (e.g. JSON) values are supported. If the field is empty, the whole value is considered.
+
+The predicate defines the following configurations:
+
+- `field` - The field in the record value to evaluate. With `field.syntax.version=V2` a dot-separated path navigates into nested structures (e.g. `after.state`); a field name that itself contains a dot can be wrapped in backticks (e.g. `` `a.b` ``). If empty, the whole value is used.
+- `value` - The expected value the field is compared to. Matches string, numeric and boolean fields. An empty string is a valid value. Either define this or `value.pattern`.
+- `value.pattern` - A regular expression the whole field value must match (a full match, not a substring search); an empty pattern matches only an empty string. Either define this or `value`.
+- `field.syntax.version` - The field path syntax version, `V1` (default, root-level fields only) or `V2` (nested paths). Set to `V2` to address a field inside a nested structure.
+
+To satisfy the predicate on the *non*-matching records instead, use Kafka Connect's built-in `negate` option on the predicate.
+
+Here is an example that converts Debezium soft-delete events into tombstones (note `field.syntax.version=V2`, since `after.state` is a nested field):
+
+```properties
+transforms=makeTombstone
+transforms.makeTombstone.type=io.aiven.kafka.connect.transforms.MakeTombstone
+transforms.makeTombstone.predicate=isSoftDeleted
+
+predicates=isSoftDeleted
+predicates.isSoftDeleted.type=io.aiven.kafka.connect.predicates.FieldValueMatches
+predicates.isSoftDeleted.field=after.state
+predicates.isSoftDeleted.value=deleted
+predicates.isSoftDeleted.field.syntax.version=V2
+```
+
 ## License
 
 This project is licensed under the [Apache License, Version 2.0](LICENSE).

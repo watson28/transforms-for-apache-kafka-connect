@@ -22,12 +22,15 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.connect.connector.policy.ConnectorClientConfigOverridePolicy;
+import org.apache.kafka.connect.connector.policy.NoneConnectorClientConfigOverridePolicy;
 import org.apache.kafka.connect.runtime.Connect;
 import org.apache.kafka.connect.runtime.ConnectorConfig;
 import org.apache.kafka.connect.runtime.Herder;
 import org.apache.kafka.connect.runtime.Worker;
 import org.apache.kafka.connect.runtime.isolation.Plugins;
-import org.apache.kafka.connect.runtime.rest.RestServer;
+import org.apache.kafka.connect.runtime.rest.ConnectRestServer;
+import org.apache.kafka.connect.runtime.rest.RestClient;
 import org.apache.kafka.connect.runtime.rest.entities.ConnectorInfo;
 import org.apache.kafka.connect.runtime.standalone.StandaloneConfig;
 import org.apache.kafka.connect.runtime.standalone.StandaloneHerder;
@@ -48,7 +51,7 @@ final class ConnectRunner {
     private Connect connect;
 
     public ConnectRunner(final File pluginDir,
-                         final String bootstrapServers) {
+            final String bootstrapServers) {
         this.pluginDir = pluginDir;
         this.bootstrapServers = bootstrapServers;
     }
@@ -59,7 +62,8 @@ final class ConnectRunner {
 
         workerProps.put("offset.flush.interval.ms", "5000");
 
-        // These don't matter much (each connector sets its own converters), but need to be filled with valid classes.
+        // These don't matter much (each connector sets its own converters), but need to
+        // be filled with valid classes.
         workerProps.put("key.converter", "org.apache.kafka.connect.converters.ByteArrayConverter");
         workerProps.put("value.converter", "org.apache.kafka.connect.converters.ByteArrayConverter");
         workerProps.put("internal.key.converter", "org.apache.kafka.connect.json.JsonConverter");
@@ -78,11 +82,22 @@ final class ConnectRunner {
         final Plugins plugins = new Plugins(workerProps);
         final StandaloneConfig config = new StandaloneConfig(workerProps);
 
-        final Worker worker = new Worker(
-            workerId, time, plugins, config, new MemoryOffsetBackingStore());
-        herder = new StandaloneHerder(worker, "cluster-id");
+        final ConnectorClientConfigOverridePolicy clientConfigOverridePolicy =
+                new NoneConnectorClientConfigOverridePolicy();
 
-        final RestServer rest = new RestServer(config);
+        final Worker worker = new Worker(
+                workerId, time, plugins, config, new MemoryOffsetBackingStore() {
+                    @Override
+                    public java.util.Set<java.util.Map<String, Object>> connectorPartitions(
+                            final String connectorName) {
+                        return java.util.Collections.emptySet();
+                    }
+                }, clientConfigOverridePolicy);
+        herder = new StandaloneHerder(worker, "cluster-id", clientConfigOverridePolicy);
+
+        final RestClient restClient = new RestClient(config);
+        final ConnectRestServer rest = new ConnectRestServer(config.rebalanceTimeout(), restClient, config.originals());
+        rest.initializeServer();
 
         connect = new Connect(herder, rest);
 
@@ -93,20 +108,19 @@ final class ConnectRunner {
         assert herder != null;
 
         final FutureCallback<Herder.Created<ConnectorInfo>> cb = new FutureCallback<>(
-            new Callback<Herder.Created<ConnectorInfo>>() {
-                @Override
-                public void onCompletion(final Throwable error, final Herder.Created<ConnectorInfo> info) {
-                    if (error != null) {
-                        log.error("Failed to create job");
-                    } else {
-                        log.info("Created connector {}", info.result().name());
+                new Callback<Herder.Created<ConnectorInfo>>() {
+                    @Override
+                    public void onCompletion(final Throwable error, final Herder.Created<ConnectorInfo> info) {
+                        if (error != null) {
+                            log.error("Failed to create job");
+                        } else {
+                            log.info("Created connector {}", info.result().name());
+                        }
                     }
-                }
-            });
+                });
         herder.putConnectorConfig(
-            config.get(ConnectorConfig.NAME_CONFIG),
-            config, false, cb
-        );
+                config.get(ConnectorConfig.NAME_CONFIG),
+                config, false, cb);
 
         final Herder.Created<ConnectorInfo> connectorInfoCreated = cb.get();
         assert connectorInfoCreated.created();
