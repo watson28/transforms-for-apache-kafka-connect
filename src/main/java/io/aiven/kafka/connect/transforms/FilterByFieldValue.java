@@ -34,7 +34,9 @@ import org.apache.kafka.connect.transforms.Transformation;
 
 public abstract class FilterByFieldValue<R extends ConnectRecord<R>> implements Transformation<R> {
 
-    private String fieldName;
+    private static final String FIELD_PATH_SEPARATOR = "\\.";
+
+    private String[] fieldPath;
     private Optional<String> fieldExpectedValue;
     private Optional<String> fieldValuePattern;
 
@@ -45,8 +47,9 @@ public abstract class FilterByFieldValue<R extends ConnectRecord<R>> implements 
                 ConfigDef.Type.STRING,
                 null,
                 ConfigDef.Importance.HIGH,
-                "The field name to filter by."
-                    + "Schema-based records (Avro), schemaless (e.g. JSON), and raw values are supported."
+                "The field name to filter by. "
+                    + "A dot-separated path (e.g. 'after.state') navigates into nested structures. "
+                    + "Schema-based records (Avro), schemaless (e.g. JSON), and raw values are supported. "
                     + "If empty, the whole key/value record will be filtered.")
             .define("field.value",
                 ConfigDef.Type.STRING,
@@ -68,7 +71,10 @@ public abstract class FilterByFieldValue<R extends ConnectRecord<R>> implements 
     @Override
     public void configure(final Map<String, ?> configs) {
         final AbstractConfig config = new AbstractConfig(config(), configs);
-        this.fieldName = config.getString("field.name");
+        final String fieldName = config.getString("field.name");
+        this.fieldPath = (fieldName == null || fieldName.isEmpty())
+            ? new String[0]
+            : fieldName.split(FIELD_PATH_SEPARATOR);
         this.fieldExpectedValue = Optional.ofNullable(config.getString("field.value"));
         this.fieldValuePattern = Optional.ofNullable(config.getString("field.value.pattern"));
         final boolean expectedValuePresent = fieldExpectedValue.isPresent();
@@ -115,32 +121,44 @@ public abstract class FilterByFieldValue<R extends ConnectRecord<R>> implements 
     }
 
     private R applyWithSchema(final R record) {
-        final Struct struct = (Struct) operatingValue(record);
-        final SchemaAndValue schemaAndValue = getStructFieldValue(struct, fieldName).orElse(null);
+        final SchemaAndValue schemaAndValue =
+            getStructFieldValue(operatingSchema(record), operatingValue(record)).orElse(null);
         return filterCondition.test(schemaAndValue) ? record : null;
     }
 
-    private Optional<SchemaAndValue> getStructFieldValue(final Struct struct, final String fieldName) {
-        final Schema schema = struct.schema();
-        final Field field = schema.field(fieldName);
-        final Object fieldValue = struct.get(field);
-        if (fieldValue == null) {
-            return Optional.empty();
-        } else {
-            return Optional.of(new SchemaAndValue(field.schema(), struct.get(field)));
+    private Optional<SchemaAndValue> getStructFieldValue(final Schema schema, final Object value) {
+        Schema currentSchema = schema;
+        Object currentValue = value;
+        for (final String segment : fieldPath) {
+            if (!(currentValue instanceof Struct)) {
+                return Optional.empty();
+            }
+            final Struct struct = (Struct) currentValue;
+            final Field field = struct.schema().field(segment);
+            if (field == null) {
+                return Optional.empty();
+            }
+            currentSchema = field.schema();
+            currentValue = struct.get(field);
         }
+        if (currentValue == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new SchemaAndValue(currentSchema, currentValue));
     }
 
     @SuppressWarnings("unchecked")
     private R applySchemaless(final R record) {
-        if (fieldName == null || fieldName.isEmpty()) {
-            final SchemaAndValue schemaAndValue = getSchemalessFieldValue(operatingValue(record)).orElse(null);
-            return filterCondition.test(schemaAndValue) ? record : null;
-        } else {
-            final Map<String, Object> map = (Map<String, Object>) operatingValue(record);
-            final SchemaAndValue schemaAndValue = getSchemalessFieldValue(map.get(fieldName)).orElse(null);
-            return filterCondition.test(schemaAndValue) ? record : null;
+        Object currentValue = operatingValue(record);
+        for (final String segment : fieldPath) {
+            if (!(currentValue instanceof Map)) {
+                currentValue = null;
+                break;
+            }
+            currentValue = ((Map<String, Object>) currentValue).get(segment);
         }
+        final SchemaAndValue schemaAndValue = getSchemalessFieldValue(currentValue).orElse(null);
+        return filterCondition.test(schemaAndValue) ? record : null;
     }
 
     private Optional<SchemaAndValue> getSchemalessFieldValue(final Object fieldValue) {

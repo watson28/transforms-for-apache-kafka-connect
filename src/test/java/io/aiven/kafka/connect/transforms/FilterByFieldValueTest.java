@@ -225,6 +225,57 @@ class FilterByFieldValueTest {
             .isEqualTo(record);
     }
 
+    @Test
+    void shouldFilterByNestedStructField() {
+        final FilterByFieldValue<SourceRecord> filter = new FilterByFieldValue.Value<>();
+        filter.configure(Map.of(
+            "field.name", "after.value",
+            "field.value", "New data",
+            "field.value.matches", "true"
+        ));
+
+        final SourceRecord matchingRecord = prepareStructRecord(
+            struct -> {
+            },
+            struct -> {
+            });
+        assertThat(filter.apply(matchingRecord))
+            .as("Record whose after.value matches should be kept")
+            .isEqualTo(matchingRecord);
+
+        final Consumer<Struct> setOtherData = value -> value.put("after",
+            new Struct(value.schema().field("after").schema())
+                .put("pk", "1")
+                .put("value", "Other data"));
+        final SourceRecord nonMatchingRecord = prepareStructRecord(
+            struct -> {
+            },
+            setOtherData);
+        assertThat(filter.apply(nonMatchingRecord))
+            .as("Record whose after.value does not match should be filtered out")
+            .isNull();
+    }
+
+    @Test
+    void shouldFilterByNestedMapField() {
+        final FilterByFieldValue<SourceRecord> filter = new FilterByFieldValue.Value<>();
+        filter.configure(Map.of(
+            "field.name", "after.state",
+            "field.value", "deleted",
+            "field.value.matches", "false"
+        ));
+
+        assertThat(filter.apply(prepareRecord(() -> "key",
+            () -> Map.of("after", Map.of("state", "deleted")))))
+            .as("Record whose after.state is 'deleted' should be filtered out")
+            .isNull();
+        final SourceRecord record = prepareRecord(() -> "key",
+            () -> Map.of("after", Map.of("state", "active")));
+        assertThat(filter.apply(record))
+            .as("Record whose after.state is not 'deleted' should be kept")
+            .isEqualTo(record);
+    }
+
     private SourceRecord prepareRecord(
         final Supplier<Object> keySupplier,
         final Supplier<Object> valueSupplier

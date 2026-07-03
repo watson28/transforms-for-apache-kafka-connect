@@ -161,7 +161,7 @@ transforms.Filter.field.value.pattern=<regex_pattern>
 transforms.Filter.field.value.matches=<true|false>
 ```
 
-If `field.name` is empty, the whole value is considered for filtering.
+`field.name` accepts a dot-separated path (e.g. `after.state`) to filter by a field in a nested structure, for both schema-based (Avro) and schemaless (e.g. JSON) records. If `field.name` is empty, the whole value is considered for filtering.
 
 Either `field.value` or `field.value.pattern` must be defined to apply filter.
 
