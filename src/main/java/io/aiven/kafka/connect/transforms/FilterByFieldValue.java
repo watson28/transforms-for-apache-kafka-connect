@@ -86,8 +86,10 @@ public abstract class FilterByFieldValue<R extends ConnectRecord<R>> implements 
         final Predicate<SchemaAndValue> matchCondition;
 
         if (expectedValuePresent) {
-            final SchemaAndValue expectedSchemaAndValue = Values.parseString(fieldExpectedValue.get());
-            matchCondition = schemaAndValue -> expectedSchemaAndValue.value().equals(schemaAndValue.value());
+            final String expectedValue = fieldExpectedValue.get();
+            matchCondition = schemaAndValue ->
+                schemaAndValue != null
+                    && expectedValue.equals(Values.convertToString(schemaAndValue.schema(), schemaAndValue.value()));
         } else {
             final String pattern = fieldValuePattern.get();
             final Predicate<String> regexPredicate = Pattern.compile(pattern).asPredicate();

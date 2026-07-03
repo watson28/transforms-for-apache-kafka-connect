@@ -226,6 +226,31 @@ class FilterByFieldValueTest {
     }
 
     @Test
+    void shouldMatchNumericStructFieldRegardlessOfNumericType() {
+        final FilterByFieldValue<SourceRecord> filter = new FilterByFieldValue.Value<>();
+        filter.configure(Map.of(
+            "field.name", "count",
+            "field.value", "5",
+            "field.value.matches", "true"
+        ));
+
+        final Schema schema = SchemaBuilder.struct()
+            .field("count", Schema.INT32_SCHEMA)
+            .build();
+        final SourceRecord matching = new SourceRecord(null, null, "some_topic",
+            null, "key", schema, new Struct(schema).put("count", 5));
+        final SourceRecord nonMatching = new SourceRecord(null, null, "some_topic",
+            null, "key", schema, new Struct(schema).put("count", 6));
+
+        assertThat(filter.apply(matching))
+            .as("Record whose int32 count is 5 should be kept when matching field.value=5")
+            .isEqualTo(matching);
+        assertThat(filter.apply(nonMatching))
+            .as("Record whose int32 count is not 5 should be filtered out")
+            .isNull();
+    }
+
+    @Test
     void shouldFilterByNestedStructField() {
         final FilterByFieldValue<SourceRecord> filter = new FilterByFieldValue.Value<>();
         filter.configure(Map.of(
