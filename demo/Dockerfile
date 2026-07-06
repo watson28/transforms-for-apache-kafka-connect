@@ -5,6 +5,6 @@ WORKDIR transforms
 
 RUN ./gradlew installDist
 
-FROM confluentinc/cp-kafka-connect:7.3.3
+FROM confluentinc/cp-kafka-connect:7.8.0
 
 COPY --from=base /transforms/build/install/transforms-for-apache-kafka-connect /transforms
