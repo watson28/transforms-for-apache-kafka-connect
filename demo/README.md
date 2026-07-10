@@ -39,7 +39,7 @@ Copy the directory with libraries into your Kafka Connect nodes.
 e.g. add directory to Docker images:
 
 ```dockerfile
-FROM confluentinc/cp-kafka-connect:7.3.3
+FROM confluentinc/cp-kafka-connect:7.8.0
 
 COPY --from=base /transforms/build/install/transforms-for-apache-kafka-connect /transforms
 ```

@@ -45,7 +45,7 @@ ext {
     debeziumVersion = "1.3.0.Final"
     jacksonVersion = "2.19.0"
     junit5Version = "5.12.2"
-    kafkaVersion = "2.0.1"
+    kafkaVersion = "3.8.1"
     log4jVersion = "2.24.3"
     testcontainersVersion = "1.21.3"
 }
@@ -95,12 +95,14 @@ configurations {
 
 dependencies {
     compileOnly "org.apache.kafka:connect-api:$kafkaVersion"
+    compileOnly "org.apache.kafka:connect-transforms:$kafkaVersion"
     compileOnly "io.debezium:debezium-api:$debeziumVersion"
 
     implementation "org.slf4j:slf4j-api:1.7.36"
 
     testImplementation "org.junit.jupiter:junit-jupiter:$junit5Version"
     testImplementation "org.apache.kafka:connect-api:$kafkaVersion"
+    testImplementation "org.apache.kafka:connect-transforms:$kafkaVersion"
     testImplementation "org.testcontainers:junit-jupiter:$testcontainersVersion"
     testImplementation "io.debezium:debezium-api:$debeziumVersion"
     testImplementation "org.assertj:assertj-core:3.27.3"
@@ -120,6 +122,10 @@ dependencies {
     integrationTestImplementation "org.testcontainers:junit-jupiter:$testcontainersVersion"
     integrationTestImplementation("com.fasterxml.jackson.core:jackson-core:$jacksonVersion")
     integrationTestImplementation "org.testcontainers:kafka:$testcontainersVersion" // this is not Kafka version
+
+    // Kafka's connect-runtime REST layer references log4j 1.x (org.apache.log4j.Logger);
+    // bridge it onto log4j2 so the embedded Connect worker can start.
+    integrationTestRuntimeOnly "org.apache.logging.log4j:log4j-1.2-api:$log4jVersion"
     // Make test utils from 'test' available in 'integration-test'
     integrationTestImplementation sourceSets.test.output
 }
